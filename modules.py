@@ -16,10 +16,27 @@ class ConvLayer(nn.Module):
         self.relu = nn.ReLU()
 
     def forward(self, x):
-        x = x.permute(0, 2, 1)
-        x = self.padding(x)
-        x = self.relu(self.conv(x))
-        return x.permute(0, 2, 1)  # Permute back
+        # x may be 2D (batch, features) from GRU h_end — unsqueeze to (batch, 1, features)
+        if x.dim() == 2:
+            x = x.unsqueeze(1)
+
+        # Encode
+        enc_out, _ = self.encoder(x)
+        h = enc_out[:, -1, :]  # last hidden state
+
+        # Latent distribution
+        mu = self.fc_mu(h)
+        log_var = self.fc_logvar(h)
+
+        # Sample z
+        z = self.reparameterize(mu, log_var)
+
+        # Decode: repeat z across window_size time steps
+        z_repeated = z.unsqueeze(1).repeat(1, self.window_size, 1)
+        dec_out, _ = self.decoder(z_repeated)
+        recon = self.output_layer(dec_out)
+
+        return recon, mu, log_var
 
 
 class FeatureAttentionLayer(nn.Module):
