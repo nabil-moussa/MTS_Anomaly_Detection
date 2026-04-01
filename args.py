@@ -26,18 +26,18 @@ def get_parser():
     # 1D conv layer
     parser.add_argument("--kernel_size", type=int, default=7)
     # GAT layers
-    parser.add_argument("--use_gatv2", type=str2bool, default=True)
+    parser.add_argument("--use_gatv2", type=str2bool, default=False)
     parser.add_argument("--feat_gat_embed_dim", type=int, default=None)
     parser.add_argument("--time_gat_embed_dim", type=int, default=None)
     # GRU layer
     parser.add_argument("--gru_n_layers", type=int, default=1)
-    parser.add_argument("--gru_hid_dim", type=int, default=150)
+    parser.add_argument("--gru_hid_dim", type=int, default=300)
     # Forecasting Model
     parser.add_argument("--fc_n_layers", type=int, default=3)
-    parser.add_argument("--fc_hid_dim", type=int, default=150)
+    parser.add_argument("--fc_hid_dim", type=int, default=300)
     # Reconstruction Model
     parser.add_argument("--recon_n_layers", type=int, default=1)
-    parser.add_argument("--recon_hid_dim", type=int, default=150)
+    parser.add_argument("--recon_hid_dim", type=int, default=300)
     # Other
     parser.add_argument("--alpha", type=float, default=0.2)
 
@@ -55,9 +55,9 @@ def get_parser():
     # --- Predictor params ---
     parser.add_argument("--scale_scores", type=str2bool, default=False)
     parser.add_argument("--use_mov_av", type=str2bool, default=False)
-    parser.add_argument("--gamma", type=float, default=1)
-    parser.add_argument("--level", type=float, default=None)
-    parser.add_argument("--q", type=float, default=None)
+    parser.add_argument("--gamma", type=float, default=0.8)
+    parser.add_argument("--level", type=float, default=0.98)
+    parser.add_argument("--q", type=float, default=1e-3)
     parser.add_argument("--dynamic_pot", type=str2bool, default=False)
 
     # --- Other ---

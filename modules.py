@@ -257,30 +257,58 @@ class RNNDecoder(nn.Module):
         return decoder_out
 
 
-class ReconstructionModel(nn.Module):
-    """Reconstruction Model
-    :param window_size: length of the input sequence
-    :param in_dim: number of input features
-    :param n_layers: number of layers in RNN
-    :param hid_dim: hidden size of the RNN
-    :param in_dim: number of output features
-    :param dropout: dropout rate
-    """
+class ReconstructionModelGRU (nn.Module):
+    """VAE-based reconstruction model as described in the paper"""
 
-    def __init__(self, window_size, in_dim, hid_dim, out_dim, n_layers, dropout):
-        super(ReconstructionModel, self).__init__()
+    def __init__(self, window_size, in_dim, hidden_dim, out_dim, n_layers, dropout):
+        super(ReconstructionModelGRU , self).__init__()
         self.window_size = window_size
-        self.decoder = RNNDecoder(in_dim, hid_dim, n_layers, dropout)
-        self.fc = nn.Linear(hid_dim, out_dim)
+        self.out_dim = out_dim
+        self.in_dim = in_dim
+
+        # Encoder: GRU -> mu and log_var
+        self.encoder = nn.GRU(
+            input_size=in_dim,
+            hidden_size=hidden_dim,
+            num_layers=n_layers,
+            batch_first=True,
+            dropout=dropout if n_layers > 1 else 0
+        )
+        self.fc_mu = nn.Linear(hidden_dim, out_dim)
+        self.fc_logvar = nn.Linear(hidden_dim, out_dim)
+
+        # Decoder: latent z -> reconstruction
+        self.decoder = nn.GRU(
+            input_size=out_dim,
+            hidden_size=hidden_dim,
+            num_layers=n_layers,
+            batch_first=True,
+            dropout=dropout if n_layers > 1 else 0
+        )
+        self.output_layer = nn.Linear(hidden_dim, in_dim)
+
+    def reparameterize(self, mu, log_var):
+        std = torch.exp(0.5 * log_var)
+        eps = torch.randn_like(std)
+        return mu + eps * std
 
     def forward(self, x):
-        # x will be last hidden state of the GRU layer
-        h_end = x
-        h_end_rep = h_end.repeat_interleave(self.window_size, dim=1).view(x.size(0), self.window_size, -1)
+        # x shape: (batch, window_size, in_dim)
+        enc_out, _ = self.encoder(x)
+        # Take last hidden state
+        h = enc_out[:, -1, :]
+        mu = self.fc_mu(h)
+        log_var = self.fc_logvar(h)
 
-        decoder_out = self.decoder(h_end_rep)
-        out = self.fc(decoder_out)
-        return out
+        # Reparameterization trick
+        z = self.reparameterize(mu, log_var)
+
+        # Decode: repeat z across time steps
+        z_repeated = z.unsqueeze(1).repeat(1, self.window_size, 1)
+        dec_out, _ = self.decoder(z_repeated)
+        recon = self.output_layer(dec_out)
+
+        return recon, mu, log_var
 
 
 class Forecasting_Model(nn.Module):
@@ -309,3 +337,61 @@ class Forecasting_Model(nn.Module):
             x = self.relu(self.layers[i](x))
             x = self.dropout(x)
         return self.layers[-1](x)
+class ReconstructionModel(nn.Module):
+    """VAE-based reconstruction model as in the original MTAD-GAT paper.
+    Replaces the GRU decoder with a proper VAE (encoder + reparameterization + decoder).
+    """
+
+    def __init__(self, window_size, in_dim, hidden_dim, out_dim, n_layers, dropout):
+        super(ReconstructionModel, self).__init__()
+        self.window_size = window_size
+        self.out_dim = out_dim
+
+        # Encoder GRU
+        self.encoder = nn.GRU(
+            input_size=in_dim,
+            hidden_size=hidden_dim,
+            num_layers=n_layers,
+            batch_first=True,
+            dropout=dropout if n_layers > 1 else 0
+        )
+        # VAE latent space projections
+        self.fc_mu = nn.Linear(hidden_dim, out_dim)
+        self.fc_logvar = nn.Linear(hidden_dim, out_dim)
+
+        # Decoder GRU
+        self.decoder = nn.GRU(
+            input_size=out_dim,
+            hidden_size=hidden_dim,
+            num_layers=n_layers,
+            batch_first=True,
+            dropout=dropout if n_layers > 1 else 0
+        )
+        self.output_layer = nn.Linear(hidden_dim, in_dim)
+
+    def reparameterize(self, mu, log_var):
+        if self.training:
+            std = torch.exp(0.5 * log_var)
+            eps = torch.randn_like(std)
+            return mu + eps * std
+        else:
+            return mu  # use mean during inference
+
+    def forward(self, x):
+        # Encode
+        enc_out, _ = self.encoder(x)
+        h = enc_out[:, -1, :]  # last hidden state
+
+        # Latent distribution
+        mu = self.fc_mu(h)
+        log_var = self.fc_logvar(h)
+
+        # Sample z
+        z = self.reparameterize(mu, log_var)
+
+        # Decode: repeat z across all time steps
+        z_repeated = z.unsqueeze(1).repeat(1, self.window_size, 1)
+        dec_out, _ = self.decoder(z_repeated)
+        recon = self.output_layer(dec_out)
+
+        return recon, mu, log_var

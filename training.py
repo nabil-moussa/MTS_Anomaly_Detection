@@ -108,7 +108,8 @@ class Trainer:
                 y = y.to(self.device)
                 self.optimizer.zero_grad()
 
-                preds, recons = self.model(x)
+                preds, recon_output  = self.model(x)
+                recons = recon_output
 
                 if self.target_dims is not None:
                     x = x[:, :, self.target_dims]
@@ -120,7 +121,11 @@ class Trainer:
                     y = y.squeeze(1)
 
                 forecast_loss = torch.sqrt(self.forecast_criterion(y, preds))
+                # VAE loss = reconstruction loss + KL divergence
+                recons, mu, log_var = recons  # unpack VAE output
                 recon_loss = torch.sqrt(self.recon_criterion(x, recons))
+                kl_loss = -0.5 * torch.mean(1 + log_var - mu.pow(2) - log_var.exp())
+                recon_loss = recon_loss + kl_loss
                 loss = forecast_loss + recon_loss
 
                 loss.backward()
@@ -201,7 +206,8 @@ class Trainer:
                 x = x.to(self.device)
                 y = y.to(self.device)
 
-                preds, recons = self.model(x)
+                preds, recon_output = self.model(x)
+                recons, mu, log_var = recon_output  # unpack VAE output
 
                 if self.target_dims is not None:
                     x = x[:, :, self.target_dims]
@@ -214,6 +220,8 @@ class Trainer:
 
                 forecast_loss = torch.sqrt(self.forecast_criterion(y, preds))
                 recon_loss = torch.sqrt(self.recon_criterion(x, recons))
+                kl_loss = -0.5 * torch.mean(1 + log_var - mu.pow(2) - log_var.exp())
+                recon_loss = recon_loss + kl_loss
 
                 forecast_losses.append(forecast_loss.item())
                 recon_losses.append(recon_loss.item())
